@@ -24,16 +24,26 @@ import android.view.MenuItem;
 
 public class MainActivity extends Activity {
 
+    private static final Logger LOG = new Logger("MainActivity");
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        LOG.v("onCreate()");
         PerformanceUtils.setMainThreadPolicy();
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.activity_main);
         if (savedInstanceState == null) {
             getFragmentManager().beginTransaction()
                     .add(R.id.container, new MainFragment())
                     .commit();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        LOG.v("onDestroy()");
+        super.onDestroy();
     }
 
     @Override

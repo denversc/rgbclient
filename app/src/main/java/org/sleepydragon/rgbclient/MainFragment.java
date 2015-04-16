@@ -28,6 +28,20 @@ import android.view.ViewGroup;
  */
 public class MainFragment extends Fragment {
 
+    private static final Logger LOG = new Logger("MainFragment");
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        LOG.v("onCreate()");
+        super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    public void onDestroy() {
+        LOG.v("onDestroy()");
+        super.onDestroy();
+    }
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
