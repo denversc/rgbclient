@@ -27,8 +27,8 @@ import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkInfo;
 import android.net.NetworkRequest;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -50,15 +50,19 @@ public class NetworkClientFragment extends Fragment {
     private final BroadcastReceiver mRestartBroadcastReceiver = new RestartBroadcastReceiver();
     private final ConnectivityManager.NetworkCallback mNetworkConnectionListener =
             new NetworkConnectionListener();
+    private final ClientConnection.Callback mClientConnectionCallback =
+            new ClientConnectionCallback();
 
     private LoadSettingsAsyncTask mLoadSettingsAsyncTask;
     private SharedPreferences mSharedPreferences;
     private LocalBroadcastManager mLocalBroadcastManager;
     private Handler mHandler;
     private ConnectivityManager mConnectivityManager;
-    private ClientConnectionThread mClientConnectionThread;
     private MainFragment mMainFragment;
     private TargetFragmentCallbacks mTargetFragmentCallbacks;
+
+    private final Object mClientConnectionThreadMutex = new Object();
+    private volatile ClientConnectionThread mClientConnectionThread;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -148,17 +152,54 @@ public class NetworkClientFragment extends Fragment {
             LOG.w("startClient(): server port not set in SharedPreferences; aborting");
             return;
         }
+
+        final NetworkInfo networkInfo = mConnectivityManager.getActiveNetworkInfo();
+        if (networkInfo == null) {
+            LOG.w("startClient(): no network connection available; aborting");
+            return;
+        } else if (!networkInfo.isConnected()) {
+            LOG.w("startClient(): the default network is not currently connected; aborting");
+            return;
+        }
+
+        synchronized (mClientConnectionThreadMutex) {
+            if (mClientConnectionThread != null) {
+                final ClientConnection connection = mClientConnectionThread.getConnection();
+                if (!connection.isStopRequested() && host.equals(connection.getHost())
+                        && port == connection.getPort()) {
+                    LOG.w("startClient(): already connected to the server; aborting");
+                    return;
+                }
+                connection.setCallback(null);
+                connection.requestStop();
+                mClientConnectionThread.interrupt();
+                mClientConnectionThread = null;
+            }
+
+            final ClientConnection connection = new ClientConnection(host, port);
+            connection.setCallback(mClientConnectionCallback);
+            final ClientConnectionThread thread = new ClientConnectionThread(connection);
+            thread.start();
+
+            mClientConnectionThread = thread;
+        }
+
+        LOG.d("startClient(): started connection with server " + host + ":" + port);
     }
 
     private void stopClient() {
         LOG.d("stopClient()");
 
-        final ClientConnectionThread thread = mClientConnectionThread;
-        mClientConnectionThread = null;
+        final ClientConnectionThread thread;
+        synchronized (mClientConnectionThreadMutex) {
+            thread = mClientConnectionThread;
+            mClientConnectionThread = null;
+        }
         if (thread != null) {
             final ClientConnection connection = thread.getConnection();
             connection.setCallback(null);
             connection.requestStop();
+            thread.interrupt();
         }
     }
 
@@ -166,6 +207,12 @@ public class NetworkClientFragment extends Fragment {
         mHandler.removeMessages(R.id.MSG_START_CLIENT);
         mHandler.removeMessages(R.id.MSG_STOP_CLIENT);
         mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
+    }
+
+    private void scheduleStopClient() {
+        mHandler.removeMessages(R.id.MSG_START_CLIENT);
+        mHandler.removeMessages(R.id.MSG_STOP_CLIENT);
+        mHandler.sendEmptyMessage(R.id.MSG_STOP_CLIENT);
     }
 
     private class LoadSettingsAsyncTask extends Settings.GetSharedPreferencesAsyncTask {
@@ -229,7 +276,7 @@ public class NetworkClientFragment extends Fragment {
         @Override
         public void onAvailable(Network network) {
             LOG.d("NetworkConnectionListener.onAvailable() network=" + network);
-            scheduleStartClient();
+            mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
         }
 
         @Override
@@ -248,14 +295,14 @@ public class NetworkClientFragment extends Fragment {
                 NetworkCapabilities networkCapabilities) {
             LOG.d("NetworkConnectionListener.onCapabilitiesChanged() network=" + network
                     + " networkCapabilities=" + networkCapabilities);
-            scheduleStartClient();
+            mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
         }
 
         @Override
         public void onLinkPropertiesChanged(Network network, LinkProperties linkProperties) {
             LOG.d("NetworkConnectionListener.onLinkPropertiesChanged() network=" + network
                     + " linkProperties=" + linkProperties);
-            scheduleStartClient();
+            mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
         }
 
     }
@@ -287,6 +334,44 @@ public class NetworkClientFragment extends Fragment {
          * Show the dialog that allows the user to enter the server information.
          */
         public void showSetServerDialog();
+
+    }
+
+    private class ClientConnectionCallback implements ClientConnection.Callback {
+
+        @Override
+        public void connectionStateChanged(@NonNull ClientConnection connection,
+                boolean connected) {
+            LOG.d("ClientConnectionCallback: connectionStateChanged() connected=" + connected);
+            if (!connected) {
+                clearConnection(connection);
+            }
+        }
+
+        @Override
+        public void connectionError(@NonNull ClientConnection connection,
+                @NonNull ConnectionError error, @NonNull String message) {
+            LOG.w("ClientConnectionCallback: connectionError() error=" + error
+                    + " message=" + message);
+            clearConnection(connection);
+        }
+
+        @Override
+        public void commandReceived(@NonNull ClientConnection connection,
+                @NonNull ClientConnection.Command command) {
+            LOG.w("ClientConnectionCallback: commandReceived() command=" + command);
+        }
+
+        private void clearConnection(@NonNull ClientConnection connection) {
+            connection.setCallback(null);
+            connection.requestStop();
+            synchronized (mClientConnectionThreadMutex) {
+                if (mClientConnectionThread != null
+                        && mClientConnectionThread.getConnection() == connection) {
+                    mClientConnectionThread = null;
+                }
+            }
+        }
 
     }
 }

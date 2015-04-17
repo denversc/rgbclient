@@ -17,25 +17,38 @@
 
 package org.sleepydragon.rgbclient;
 
-import android.net.Network;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
+import java.io.DataInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.Socket;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.net.SocketFactory;
 
 /**
  * Manages a connection with the RGB Server.
  */
 public class ClientConnection implements Runnable {
 
+    public enum Instruction {
+        RELATIVE,
+        ABSOLUTE;
+
+        public static Instruction fromCode(byte code) {
+            switch (code) {
+                case 1:
+                    return RELATIVE;
+                case 2:
+                    return ABSOLUTE;
+                default:
+                    return null;
+            }
+        }
+    }
+
     @NonNull
-    private final Network mNetwork;
-    @NonNull
-    private final String mHostName;
+    private final String mHost;
     private final int mPort;
 
     @Nullable
@@ -49,15 +62,13 @@ public class ClientConnection implements Runnable {
     /**
      * Creates a new instance of this class.
      *
-     * @param network the network to use to connect to the server; must not be null.
-     * @param hostName the host name or IP address of the server; must not be null.
+     * @param host the host name or IP address of the server; must not be null.
      * @param port the TCP port number of the server.
      */
-    public ClientConnection(@NonNull Network network, @NonNull String hostName, int port) {
-        mNetwork = network;
-        mHostName = hostName;
+    public ClientConnection(@NonNull String host, int port) {
+        mHost = host;
         mPort = port;
-        mLogger = new Logger("ClientConnection network=" + network + " " + hostName + ":" + port);
+        mLogger = new Logger("ClientConnection " + host + ":" + port);
     }
 
     /**
@@ -68,20 +79,11 @@ public class ClientConnection implements Runnable {
     }
 
     /**
-     * Returns the the network that is used to connect to the server that was specified to the
-     * constructor.
-     */
-    @NonNull
-    public Network geNetwork() {
-        return mNetwork;
-    }
-
-    /**
      * Returns the host name or IP address of the server that was specified to the constructor.
      */
     @NonNull
-    public String getHostName() {
-        return mHostName;
+    public String getHost() {
+        return mHost;
     }
 
     /**
@@ -115,10 +117,9 @@ public class ClientConnection implements Runnable {
         }
 
         log.d("connecting to server");
-        final SocketFactory socketFactory = mNetwork.getSocketFactory();
         final Socket socket;
         try {
-            socket = socketFactory.createSocket(mHostName, mPort);
+            socket = new Socket(mHost, mPort);
         } catch (IOException e) {
             log.w("server connection failed: " + e);
             notifyConnectionError(Callback.ConnectionError.CONNECTION_ESTABLISHMENT, e.getMessage());
@@ -126,13 +127,70 @@ public class ClientConnection implements Runnable {
         }
 
         try {
-            log.d("connecting to server");
+            log.d("connected to server");
+            if (isStopRequested()) {
+                log.d("run() cancelled at checkpoint B");
+                return;
+            }
+
+            final InputStream inputStream = socket.getInputStream();
+            final DataInputStream in = new DataInputStream(inputStream);
+
+            synchronized (mCallbackMutex) {
+                if (mCallback != null) {
+                    mCallback.connectionStateChanged(this, true);
+                }
+            }
+
+            while (true) {
+                if (isStopRequested()) {
+                    log.d("run() cancelled at checkpoint C");
+                    return;
+                }
+
+                final byte instructionCode = in.readByte();
+                final Instruction instruction = Instruction.fromCode(instructionCode);
+                if (instruction == null) {
+                    throw new ProtocolException("invalid instruction: " + instructionCode);
+                }
+
+                final int r, g, b;
+                switch (instruction) {
+                    case RELATIVE:
+                        r = in.readChar();
+                        g = in.readChar();
+                        b = in.readChar();
+                        break;
+                    case ABSOLUTE:
+                        r = in.readByte();
+                        g = in.readByte();
+                        b = in.readByte();
+                        break;
+                    default:
+                        throw new RuntimeException("should never get here");
+                }
+
+                log.d("data received from server: instruction=" + instruction
+                        + " (" + r + ", " + g + ", " + b + ")");
+            }
+        } catch (IOException e) {
+            log.w("error reading from server: " + e);
+            notifyConnectionError(Callback.ConnectionError.READ, e.getMessage());
+        } catch (ProtocolException e) {
+            log.w("protocol error reading from server: " + e.getMessage());
+            notifyConnectionError(Callback.ConnectionError.PROTOCOL, e.getMessage());
         } finally {
             log.d("closing connection to server");
             try {
                 socket.close();
             } catch (IOException e) {
                 // oh well
+            } finally {
+                synchronized (mCallbackMutex) {
+                    if (mCallback != null) {
+                        mCallback.connectionStateChanged(this, false);
+                    }
+                }
             }
         }
     }
@@ -141,7 +199,7 @@ public class ClientConnection implements Runnable {
             @NonNull String message) {
         synchronized (mCallbackMutex) {
             if (mCallback != null) {
-                mCallback.connectionError(error, message);
+                mCallback.connectionError(this, error, message);
             }
         }
     }
@@ -179,30 +237,44 @@ public class ClientConnection implements Runnable {
              * Connection error reported when establishing the initial connection fails.
              */
             CONNECTION_ESTABLISHMENT,
+
+            /**
+             * An I/O error occurred while reading from the socket.
+             */
+            READ,
+
+            /**
+             * The data that was received from the server does not conform to the protocol.
+             */
+            PROTOCOL,
         }
 
         /**
          * Called when the state of the connection with the server changes.
          *
+         * @param connection the connection from which this event originated; will never be null.
          * @param connected true if a connection was established
          * or false if the connection was closed.
          */
-        public void connectionStateChanged(boolean connected);
+        public void connectionStateChanged(@NonNull ClientConnection connection, boolean connected);
 
         /**
          * Called when an error occurred in the connection with the server.
          *
+         * @param connection the connection from which this event originated; will never be null.
          * @param error the type of error that occurred.
          * @param message a message describing the error; will never be null.
          */
-        public void connectionError(@NonNull ConnectionError error, @NonNull String message);
+        public void connectionError(@NonNull ClientConnection connection,
+                @NonNull ConnectionError error, @NonNull String message);
 
         /**
          * Called when a command is received from the server.
          *
+         * @param connection the connection from which this event originated; will never be null.
          * @param command the command that was received; will never be null.
          */
-        public void commandReceived(@NonNull Command command);
+        public void commandReceived(@NonNull ClientConnection connection, @NonNull Command command);
 
     }
 
@@ -211,24 +283,32 @@ public class ClientConnection implements Runnable {
      */
     public static class Command {
 
-        public enum Type {
-            ABSOLUTE,
-            RELATIVE,
-        }
-
         @NonNull
-        public final Type type;
+        public final Instruction instruction;
         public final int r;
         public final int g;
         public final int b;
 
-        public Command(@NonNull Type type, int r, int g, int b) {
-            this.type = type;
+        public Command(@NonNull Instruction instruction, int r, int g, int b) {
+            this.instruction = instruction;
             this.r = r;
             this.g = g;
             this.b = b;
         }
 
+        @Override
+        public String toString() {
+            return instruction + " (" + r + ", " + g + ", " + b + ")";
+        }
+    }
+
+    /**
+     * Exception thrown if the protocol received from the server is non-conformant.
+     */
+    private static class ProtocolException extends Exception {
+        public ProtocolException(String message) {
+            super(message);
+        }
     }
 
 }
