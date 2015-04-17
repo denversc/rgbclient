@@ -41,7 +41,6 @@ public class PerformanceUtils {
      */
     public static void setMainThreadPolicy() {
         setThreadPolicy();
-        setVmPolicy();
     }
 
     private static void setThreadPolicy() {
@@ -55,19 +54,6 @@ public class PerformanceUtils {
 
         final StrictMode.ThreadPolicy policy = builder.build();
         StrictMode.setThreadPolicy(policy);
-    }
-
-    private static void setVmPolicy() {
-        final StrictMode.VmPolicy.Builder builder = new StrictMode.VmPolicy.Builder();
-        builder.detectAll();
-        if (BuildConfig.DEBUG) {
-            builder.penaltyDeath();
-        } else {
-            builder.penaltyLog();
-        }
-
-        final StrictMode.VmPolicy policy = builder.build();
-        StrictMode.setVmPolicy(policy);
     }
 
 }

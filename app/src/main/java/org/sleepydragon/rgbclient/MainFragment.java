@@ -19,7 +19,10 @@ package org.sleepydragon.rgbclient;
 
 import android.app.Fragment;
 import android.app.FragmentManager;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,7 +30,8 @@ import android.view.ViewGroup;
 /**
  * The main fragment for the main activity.
  */
-public class MainFragment extends Fragment {
+public class MainFragment extends Fragment
+        implements NetworkClientFragment.TargetFragmentCallbacks {
 
     private static final Logger LOG = new Logger("MainFragment");
 
@@ -61,6 +65,30 @@ public class MainFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
         return inflater.inflate(R.layout.fragment_main, container, false);
+    }
+
+    /**
+     * Ask the hosting activity to display a dialog that allows the user to set the server info.
+     */
+    @Override
+    public void showSetServerDialog() {
+        final ActivityCallbacks cb = (ActivityCallbacks) getActivity();
+        if (cb != null) {
+            cb.showSetServerDialog();
+        }
+    }
+
+    /**
+     * An interface to be implemented by the hosting activity to allow this fragment to make
+     * demands on it.
+     */
+    public static interface ActivityCallbacks {
+
+        /**
+         * Show the dialog that allows the user to enter the server information.
+         */
+        public void showSetServerDialog();
+
     }
 
 }

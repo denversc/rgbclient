@@ -41,8 +41,6 @@ import android.support.v4.content.LocalBroadcastManager;
 public class NetworkClientFragment extends Fragment {
 
     private static final Logger LOG = new Logger("NetworkClientFragment");
-    private static final String ACTION_RESTART_CLIENT =
-            "org.sleepydragon.rgbclient.NetworkClientFragment.RESTART_CLIENT";
 
     /**
      * A suggested tag to use for this fragment with the FragmentManager.
@@ -59,6 +57,8 @@ public class NetworkClientFragment extends Fragment {
     private Handler mHandler;
     private ConnectivityManager mConnectivityManager;
     private ClientConnectionThread mClientConnectionThread;
+    private MainFragment mMainFragment;
+    private TargetFragmentCallbacks mTargetFragmentCallbacks;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -80,11 +80,19 @@ public class NetworkClientFragment extends Fragment {
 
         mLocalBroadcastManager = LocalBroadcastManager.getInstance(getActivity());
         final IntentFilter restartReceiverFilter = new IntentFilter();
-        restartReceiverFilter.addAction(ACTION_RESTART_CLIENT);
+        restartReceiverFilter.addAction(Settings.ACTION_SERVER_INFO_CHANGED);
         mLocalBroadcastManager.registerReceiver(mRestartBroadcastReceiver, restartReceiverFilter);
 
         mLoadSettingsAsyncTask = new LoadSettingsAsyncTask(getActivity());
         mLoadSettingsAsyncTask.execute();
+    }
+
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        LOG.v("onActivityCreated()");
+        super.onActivityCreated(savedInstanceState);
+        mTargetFragmentCallbacks = (TargetFragmentCallbacks) getTargetFragment();
+        scheduleStartClient(); // in case the LoadSettingsAsyncTask already finished
     }
 
     @Override
@@ -100,17 +108,10 @@ public class NetworkClientFragment extends Fragment {
         mConnectivityManager.unregisterNetworkCallback(mNetworkConnectionListener);
     }
 
-    /**
-     * Creates and returns an Intent that, when posted to {@link LocalBroadcastManager} will cause
-     * this fragment to restart the server.  This is typically done when the host and/or port of
-     * the server is changed in SharedPreferences.
-     * @return the Intent; never returns null.
-     */
-    @NonNull
-    public static Intent getRestartClientIntent() {
-        final Intent intent = new Intent();
-        intent.setAction(ACTION_RESTART_CLIENT);
-        return intent;
+    @Override
+    public void onDetach() {
+        super.onDetach();
+        mTargetFragmentCallbacks = null;
     }
 
     private void startClient() {
@@ -128,14 +129,24 @@ public class NetworkClientFragment extends Fragment {
             return;
         }
 
-        final String hostName = prefs.getString(Settings.KEY_SERVER_HOST, null);
-        if (hostName == null) {
+        final String hostKey = Settings.getServerHostKey(context);
+        final String host = prefs.getString(hostKey, null);
+        if (host == null) {
             LOG.w("startClient(): server host name not set in SharedPreferences; aborting");
+            if (mTargetFragmentCallbacks != null) {
+                mTargetFragmentCallbacks.showSetServerDialog();
+            }
+            return;
         }
 
-        final int port = prefs.getInt(Settings.KEY_SERVER_PORT, -1);
+        final String portKey = Settings.getServerPortKey(context);
+        final int port = prefs.getInt(portKey, -1);
         if (port == -1) {
+            if (mTargetFragmentCallbacks != null) {
+                mTargetFragmentCallbacks.showSetServerDialog();
+            }
             LOG.w("startClient(): server port not set in SharedPreferences; aborting");
+            return;
         }
     }
 
@@ -151,33 +162,16 @@ public class NetworkClientFragment extends Fragment {
         }
     }
 
-    private void scheduleRestartClient() {
-        mHandler.removeMessages(R.id.MSG_STOP_CLIENT);
-        mHandler.removeMessages(R.id.MSG_START_CLIENT);
-        mHandler.sendEmptyMessage(R.id.MSG_STOP_CLIENT);
-        mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
-    }
-
     private void scheduleStartClient() {
         mHandler.removeMessages(R.id.MSG_START_CLIENT);
+        mHandler.removeMessages(R.id.MSG_STOP_CLIENT);
         mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
     }
 
-    private class LoadSettingsAsyncTask extends AsyncTask<Void, Void, SharedPreferences> {
-
-        @NonNull
-        private final Context mContext;
+    private class LoadSettingsAsyncTask extends Settings.GetSharedPreferencesAsyncTask {
 
         public LoadSettingsAsyncTask(@NonNull Context context) {
-            mContext = context;
-        }
-
-        @Override
-        protected SharedPreferences doInBackground(Void... params) {
-            final SharedPreferences prefs = Settings.getSharedPreferences(mContext);
-            // load all values to avoid future disk I/O
-            prefs.getAll();
-            return prefs;
+            super(context);
         }
 
         @Override
@@ -205,8 +199,8 @@ public class NetworkClientFragment extends Fragment {
                 return;
             }
             final String action = intent.getAction();
-            if (ACTION_RESTART_CLIENT.equals(action)) {
-                scheduleRestartClient();
+            if (Settings.ACTION_SERVER_INFO_CHANGED.equals(action)) {
+                scheduleStartClient();
             }
         }
 
@@ -283,4 +277,16 @@ public class NetworkClientFragment extends Fragment {
 
     }
 
+    /**
+     * An interface to be implemented by the target fragment of this fragment to allow this fragment
+     * to make demands on it.
+     */
+    public static interface TargetFragmentCallbacks {
+
+        /**
+         * Show the dialog that allows the user to enter the server information.
+         */
+        public void showSetServerDialog();
+
+    }
 }

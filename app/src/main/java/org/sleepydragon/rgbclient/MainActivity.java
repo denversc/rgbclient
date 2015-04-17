@@ -18,13 +18,15 @@
 package org.sleepydragon.rgbclient;
 
 import android.app.Activity;
+import android.app.FragmentManager;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements MainFragment.ActivityCallbacks {
 
     private static final Logger LOG = new Logger("MainActivity");
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,15 +55,23 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
+    public void showSetServerDialog() {
+        final FragmentManager fm = getFragmentManager();
+        final SetServerDialogFragment fragment = new SetServerDialogFragment();
+        if (fm.findFragmentByTag("SetServer") == null) {
+            fragment.show(fm, "SetServer");
         }
+    }
 
-        return super.onOptionsItemSelected(item);
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch(item.getItemId()) {
+            case R.id.action_set_server:
+                showSetServerDialog();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
     }
 
 }
