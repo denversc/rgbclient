@@ -166,7 +166,14 @@ public class NetworkClientFragment extends Fragment {
                 final ClientConnection connection = mClientConnectionThread.getConnection();
                 if (!connection.isStopRequested() && host.equals(connection.getHost())
                         && port == connection.getPort()) {
-                    LOG.w("startClient(): already connected to the server; aborting");
+                    if (connection.isConnected()) {
+                        LOG.w("startClient(): already connected to the server; aborting");
+                    } else {
+                        LOG.w("startClient(): establishing connection to the server; "
+                                + "will check back again shortly to make sure it succeeded");
+                        mHandler.removeMessages(R.id.MSG_START_CLIENT);
+                        mHandler.sendEmptyMessageDelayed(R.id.MSG_START_CLIENT, 1000);
+                    }
                     return;
                 }
                 connection.setCallback(null);
@@ -276,7 +283,7 @@ public class NetworkClientFragment extends Fragment {
         @Override
         public void onAvailable(Network network) {
             LOG.d("NetworkConnectionListener.onAvailable() network=" + network);
-            mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
+            scheduleStartClient();
         }
 
         @Override
@@ -295,14 +302,14 @@ public class NetworkClientFragment extends Fragment {
                 NetworkCapabilities networkCapabilities) {
             LOG.d("NetworkConnectionListener.onCapabilitiesChanged() network=" + network
                     + " networkCapabilities=" + networkCapabilities);
-            mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
+            scheduleStartClient();
         }
 
         @Override
         public void onLinkPropertiesChanged(Network network, LinkProperties linkProperties) {
             LOG.d("NetworkConnectionListener.onLinkPropertiesChanged() network=" + network
                     + " linkProperties=" + linkProperties);
-            mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
+            scheduleStartClient();
         }
 
     }

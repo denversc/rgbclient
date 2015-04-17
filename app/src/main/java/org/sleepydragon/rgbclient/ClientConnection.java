@@ -56,6 +56,7 @@ public class ClientConnection implements Runnable {
     private final Object mCallbackMutex = new Object();
 
     private final AtomicBoolean mStopRequested = new AtomicBoolean(false);
+    private final AtomicBoolean mConnected = new AtomicBoolean(false);
 
     private final Logger mLogger;
 
@@ -135,6 +136,7 @@ public class ClientConnection implements Runnable {
 
             final InputStream inputStream = socket.getInputStream();
             final DataInputStream in = new DataInputStream(inputStream);
+            mConnected.set(true);
 
             synchronized (mCallbackMutex) {
                 if (mCallback != null) {
@@ -181,6 +183,7 @@ public class ClientConnection implements Runnable {
             notifyConnectionError(Callback.ConnectionError.PROTOCOL, e.getMessage());
         } finally {
             log.d("closing connection to server");
+            mConnected.set(false);
             try {
                 socket.close();
             } catch (IOException e) {
@@ -225,6 +228,15 @@ public class ClientConnection implements Runnable {
      */
     public boolean isStopRequested() {
         return mStopRequested.get();
+    }
+
+    /**
+     * Returns whether or not the connection to the server has been successfully established.
+     * @return true if the connection to the server has been successfully established or false if
+     * it has not.
+     */
+    public boolean isConnected() {
+        return mConnected.get();
     }
 
     /**
