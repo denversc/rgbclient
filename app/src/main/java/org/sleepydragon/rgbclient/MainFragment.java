@@ -18,6 +18,7 @@
 package org.sleepydragon.rgbclient;
 
 import android.app.Fragment;
+import android.app.FragmentManager;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -34,6 +35,20 @@ public class MainFragment extends Fragment {
     public void onCreate(Bundle savedInstanceState) {
         LOG.v("onCreate()");
         super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        LOG.v("onActivityCreated()");
+        super.onActivityCreated(savedInstanceState);
+
+        final FragmentManager fm = getFragmentManager();
+        Fragment networkClientFragment = fm.findFragmentByTag(NetworkClientFragment.TAG);
+        if (networkClientFragment == null) {
+            networkClientFragment = new NetworkClientFragment();
+            networkClientFragment.setTargetFragment(this, 0);
+            fm.beginTransaction().add(networkClientFragment, NetworkClientFragment.TAG).commit();
+        }
     }
 
     @Override

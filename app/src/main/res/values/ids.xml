@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item type="id" name="MSG_STOP_CLIENT" />
+    <item type="id" name="MSG_START_CLIENT" />
+</resources>
