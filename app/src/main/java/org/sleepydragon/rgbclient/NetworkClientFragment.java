@@ -58,7 +58,6 @@ public class NetworkClientFragment extends Fragment {
     private LocalBroadcastManager mLocalBroadcastManager;
     private Handler mHandler;
     private ConnectivityManager mConnectivityManager;
-    private MainFragment mMainFragment;
     private TargetFragmentCallbacks mTargetFragmentCallbacks;
 
     private final Object mClientConnectionThreadMutex = new Object();
@@ -209,10 +208,11 @@ public class NetworkClientFragment extends Fragment {
         mHandler.sendEmptyMessage(R.id.MSG_START_CLIENT);
     }
 
-    private void scheduleStopClient() {
+    public void restart() {
         mHandler.removeMessages(R.id.MSG_START_CLIENT);
         mHandler.removeMessages(R.id.MSG_STOP_CLIENT);
-        mHandler.sendEmptyMessage(R.id.MSG_STOP_CLIENT);
+        stopClient();
+        startClient();
     }
 
     private class LoadSettingsAsyncTask extends Settings.GetSharedPreferencesAsyncTask {

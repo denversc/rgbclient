@@ -2,6 +2,7 @@
     <string name="app_name">RGB Client</string>
     <string name="hello_world">Hello world!</string>
     <string name="action_set_server">Set Server</string>
+    <string name="action_restart_network_client">Restart Network Client</string>
 
     <string name="dialog_title_server_settings">Server Settings</string>
     <string name="pref_key_server_host" translateable="false">server_host</string>

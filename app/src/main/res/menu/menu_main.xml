@@ -4,8 +4,15 @@
 
     <item android:id="@+id/action_set_server"
         android:title="@string/action_set_server"
-        android:orderInCategory="100"
+        android:orderInCategory="101"
         android:showAsAction="never"
+        />
+
+    <item android:id="@+id/action_restart_network_client"
+        android:title="@string/action_restart_network_client"
+        android:icon="@drawable/ic_action_refresh"
+        android:orderInCategory="100"
+        android:showAsAction="ifRoom"
         />
 
 </menu>

@@ -27,6 +27,7 @@ public class MainActivity extends Activity implements MainFragment.ActivityCallb
 
     private static final Logger LOG = new Logger("MainActivity");
 
+    private MainFragment mMainFragment;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,10 +36,13 @@ public class MainActivity extends Activity implements MainFragment.ActivityCallb
         super.onCreate(savedInstanceState);
 
         setContentView(R.layout.activity_main);
+
+        final FragmentManager fm = getFragmentManager();
         if (savedInstanceState == null) {
-            getFragmentManager().beginTransaction()
-                    .add(R.id.container, new MainFragment())
-                    .commit();
+            mMainFragment = new MainFragment();
+            fm.beginTransaction().add(R.id.container, mMainFragment, "main").commit();
+        } else {
+            mMainFragment = (MainFragment) fm.findFragmentByTag("main");
         }
     }
 
@@ -65,9 +69,12 @@ public class MainActivity extends Activity implements MainFragment.ActivityCallb
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        switch(item.getItemId()) {
+        switch (item.getItemId()) {
             case R.id.action_set_server:
                 showSetServerDialog();
+                return true;
+            case R.id.action_restart_network_client:
+                mMainFragment.restartNetworkClient();
                 return true;
             default:
                 return super.onOptionsItemSelected(item);

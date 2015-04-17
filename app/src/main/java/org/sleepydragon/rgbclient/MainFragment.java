@@ -35,6 +35,8 @@ public class MainFragment extends Fragment
 
     private static final Logger LOG = new Logger("MainFragment");
 
+    private NetworkClientFragment mNetworkClientFragment;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         LOG.v("onCreate()");
@@ -47,11 +49,12 @@ public class MainFragment extends Fragment
         super.onActivityCreated(savedInstanceState);
 
         final FragmentManager fm = getFragmentManager();
-        Fragment networkClientFragment = fm.findFragmentByTag(NetworkClientFragment.TAG);
-        if (networkClientFragment == null) {
-            networkClientFragment = new NetworkClientFragment();
-            networkClientFragment.setTargetFragment(this, 0);
-            fm.beginTransaction().add(networkClientFragment, NetworkClientFragment.TAG).commit();
+        mNetworkClientFragment = (NetworkClientFragment)
+                fm.findFragmentByTag(NetworkClientFragment.TAG);
+        if (mNetworkClientFragment == null) {
+            mNetworkClientFragment = new NetworkClientFragment();
+            mNetworkClientFragment.setTargetFragment(this, 0);
+            fm.beginTransaction().add(mNetworkClientFragment, NetworkClientFragment.TAG).commit();
         }
     }
 
@@ -76,6 +79,10 @@ public class MainFragment extends Fragment
         if (cb != null) {
             cb.showSetServerDialog();
         }
+    }
+
+    public void restartNetworkClient() {
+        mNetworkClientFragment.restart();
     }
 
     /**
