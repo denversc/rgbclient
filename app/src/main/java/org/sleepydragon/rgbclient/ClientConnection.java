@@ -159,14 +159,14 @@ public class ClientConnection implements Runnable {
                 final int r, g, b;
                 switch (instruction) {
                     case RELATIVE:
-                        r = in.readChar();
-                        g = in.readChar();
-                        b = in.readChar();
+                        r = in.readShort();
+                        g = in.readShort();
+                        b = in.readShort();
                         break;
                     case ABSOLUTE:
-                        r = in.readByte();
-                        g = in.readByte();
-                        b = in.readByte();
+                        r = in.readUnsignedByte();
+                        g = in.readUnsignedByte();
+                        b = in.readUnsignedByte();
                         break;
                     default:
                         throw new RuntimeException("should never get here");
