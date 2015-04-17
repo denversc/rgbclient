@@ -18,6 +18,7 @@
 package org.sleepydragon.rgbclient;
 
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.util.Log;
 
 /**
@@ -42,7 +43,19 @@ public class Logger {
      * must not be null.
      */
     public Logger(@NonNull String subTag) {
-        mSubTag = subTag;
+        this(null, subTag);
+    }
+
+    /**
+     * Creates a new instance of this class.
+     *
+     * @param parentLogger the Logger whose child to create; may be null if this logger has no
+     * parent.
+     * @param subTag the log "sub-tag" to prepend to each log messages emitted by this object;
+     * must not be null.
+     */
+    public Logger(@Nullable Logger parentLogger, @NonNull String subTag) {
+        mSubTag = (parentLogger == null) ? subTag : (parentLogger.mSubTag + ": " + subTag);
     }
 
     /**
@@ -85,6 +98,20 @@ public class Logger {
      */
     public void w(@NonNull String message) {
         Log.w(LOG_TAG, createLogMessage(message));
+    }
+
+    /**
+     * Creates a new Logger with this logger as the parent.
+     * Invoking this method is exactly the same as using the {@link #Logger(Logger, String)}
+     * constructor except that using this method may be more readable in code.
+     *
+     * @param subTag the log "sub-tag" to prepend to each log messages emitted by this object;
+     * must not be null.
+     * @return the newly-created Logger; never returns null.
+     */
+    @NonNull
+    public Logger createSubLogger(@NonNull String subTag) {
+        return new Logger(this, subTag);
     }
 
     private String createLogMessage(@NonNull String message) {

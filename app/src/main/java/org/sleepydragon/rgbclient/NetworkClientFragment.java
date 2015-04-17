@@ -23,6 +23,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -45,11 +50,15 @@ public class NetworkClientFragment extends Fragment {
     public static final String TAG = "NetworkClient";
 
     private final BroadcastReceiver mRestartBroadcastReceiver = new RestartBroadcastReceiver();
+    private final ConnectivityManager.NetworkCallback mNetworkConnectionListener =
+            new NetworkConnectionListener();
 
     private LoadSettingsAsyncTask mLoadSettingsAsyncTask;
     private SharedPreferences mSharedPreferences;
     private LocalBroadcastManager mLocalBroadcastManager;
     private Handler mHandler;
+    private ConnectivityManager mConnectivityManager;
+    private ClientConnectionThread mClientConnectionThread;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -61,6 +70,13 @@ public class NetworkClientFragment extends Fragment {
         setRetainInstance(true);
 
         mHandler = new Handler(new MainHandlerCallback());
+
+        mConnectivityManager =
+                (ConnectivityManager) getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
+        final NetworkRequest.Builder networkRequestBuilder = new NetworkRequest.Builder();
+        networkRequestBuilder.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        final NetworkRequest networkRequest = networkRequestBuilder.build();
+        mConnectivityManager.registerNetworkCallback(networkRequest, mNetworkConnectionListener);
 
         mLocalBroadcastManager = LocalBroadcastManager.getInstance(getActivity());
         final IntentFilter restartReceiverFilter = new IntentFilter();
@@ -76,10 +92,12 @@ public class NetworkClientFragment extends Fragment {
         LOG.v("onDestroy()");
         super.onDestroy();
 
+        stopClient();
+        mLoadSettingsAsyncTask.cancel(false);
+        mLocalBroadcastManager.unregisterReceiver(mRestartBroadcastReceiver);
         mHandler.removeMessages(R.id.MSG_START_CLIENT);
         mHandler.removeMessages(R.id.MSG_STOP_CLIENT);
-        mLocalBroadcastManager.unregisterReceiver(mRestartBroadcastReceiver);
-        mLoadSettingsAsyncTask.cancel(false);
+        mConnectivityManager.unregisterNetworkCallback(mNetworkConnectionListener);
     }
 
     /**
@@ -97,10 +115,40 @@ public class NetworkClientFragment extends Fragment {
 
     private void startClient() {
         LOG.d("startClient()");
+
+        final Context context = getActivity();
+        if (context == null) {
+            LOG.w("startClient(): getActivity() returned null; aborting");
+            return;
+        }
+
+        final SharedPreferences prefs = mSharedPreferences;
+        if (prefs == null) {
+            LOG.w("startClient(): mSharedPreferences==null; aborting");
+            return;
+        }
+
+        final String hostName = prefs.getString(Settings.KEY_SERVER_HOST, null);
+        if (hostName == null) {
+            LOG.w("startClient(): server host name not set in SharedPreferences; aborting");
+        }
+
+        final int port = prefs.getInt(Settings.KEY_SERVER_PORT, -1);
+        if (port == -1) {
+            LOG.w("startClient(): server port not set in SharedPreferences; aborting");
+        }
     }
 
     private void stopClient() {
-        LOG.d("startClient()");
+        LOG.d("stopClient()");
+
+        final ClientConnectionThread thread = mClientConnectionThread;
+        mClientConnectionThread = null;
+        if (thread != null) {
+            final ClientConnection connection = thread.getConnection();
+            connection.setCallback(null);
+            connection.requestStop();
+        }
     }
 
     private void scheduleRestartClient() {
@@ -126,7 +174,10 @@ public class NetworkClientFragment extends Fragment {
 
         @Override
         protected SharedPreferences doInBackground(Void... params) {
-            return Settings.getSharedPreferences(mContext);
+            final SharedPreferences prefs = Settings.getSharedPreferences(mContext);
+            // load all values to avoid future disk I/O
+            prefs.getAll();
+            return prefs;
         }
 
         @Override
@@ -175,6 +226,59 @@ public class NetworkClientFragment extends Fragment {
                 default:
                     return false;
             }
+        }
+
+    }
+
+    private class NetworkConnectionListener extends ConnectivityManager.NetworkCallback {
+
+        @Override
+        public void onAvailable(Network network) {
+            LOG.d("NetworkConnectionListener.onAvailable() network=" + network);
+            scheduleStartClient();
+        }
+
+        @Override
+        public void onLosing(Network network, int maxMsToLive) {
+            LOG.d("NetworkConnectionListener.onLosing() network=" + network
+                    + " maxMsToLive=" + maxMsToLive);
+        }
+
+        @Override
+        public void onLost(Network network) {
+            LOG.d("NetworkConnectionListener.onLost() network=" + network);
+        }
+
+        @Override
+        public void onCapabilitiesChanged(Network network,
+                NetworkCapabilities networkCapabilities) {
+            LOG.d("NetworkConnectionListener.onCapabilitiesChanged() network=" + network
+                    + " networkCapabilities=" + networkCapabilities);
+            scheduleStartClient();
+        }
+
+        @Override
+        public void onLinkPropertiesChanged(Network network, LinkProperties linkProperties) {
+            LOG.d("NetworkConnectionListener.onLinkPropertiesChanged() network=" + network
+                    + " linkProperties=" + linkProperties);
+            scheduleStartClient();
+        }
+
+    }
+
+    private static class ClientConnectionThread extends Thread {
+
+        @NonNull
+        private final ClientConnection mConnection;
+
+        public ClientConnectionThread(@NonNull ClientConnection connection) {
+            super(connection);
+            mConnection = connection;
+        }
+
+        @NonNull
+        public ClientConnection getConnection() {
+            return mConnection;
         }
 
     }
