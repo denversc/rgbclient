@@ -35,6 +35,12 @@ import android.os.Message;
 import android.support.annotation.NonNull;
 import android.support.v4.content.LocalBroadcastManager;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
+import java.util.UUID;
+
 /**
  * A non-UI fragment that manages the network connection with the server.
  */
@@ -52,6 +58,9 @@ public class NetworkClientFragment extends Fragment {
             new NetworkConnectionListener();
     private final ClientConnection.Callback mClientConnectionCallback =
             new ClientConnectionCallback();
+
+    private static final int MAX_COMMAND_HISTORY_SIZE = 1000;
+    private final Queue<ColorCommand> mCommands = new ArrayDeque<>();
 
     private LoadSettingsAsyncTask mLoadSettingsAsyncTask;
     private SharedPreferences mSharedPreferences;
@@ -220,6 +229,34 @@ public class NetworkClientFragment extends Fragment {
         startClient();
     }
 
+    @NonNull
+    public List<ColorCommand> getCommandsSince(@NonNull UUID id) {
+        final List<ColorCommand> result = new ArrayList<>();
+
+        boolean idFound = false;
+        synchronized (mCommands) {
+            for (final ColorCommand command : mCommands) {
+                if (idFound) {
+                    result.add(command);
+                } else if (command.id.equals(id)) {
+                    idFound = true;
+                }
+            }
+
+            // if the given ID was not found, then it must have fallen off the end; so treat all
+            // command as being new
+            if (! idFound) {
+                // sanity check
+                if (result.size() > 0) {
+                    throw new AssertionError("result.size()==" + result.size());
+                }
+                result.addAll(mCommands);
+            }
+        }
+
+        return result;
+    }
+
     private class LoadSettingsAsyncTask extends Settings.GetSharedPreferencesAsyncTask {
 
         public LoadSettingsAsyncTask(@NonNull Context context) {
@@ -333,18 +370,18 @@ public class NetworkClientFragment extends Fragment {
      * An interface to be implemented by the target fragment of this fragment to allow this fragment
      * to make demands on it.
      */
-    public static interface TargetFragmentCallbacks {
+    public interface TargetFragmentCallbacks {
 
         /**
          * Show the dialog that allows the user to enter the server information.
          */
-        public void showSetServerDialog();
+        void showSetServerDialog();
 
         /**
          * Process a command received from the server.
          * @param command the command that was received; will never be null.
          */
-        public void onCommandReceived(@NonNull ClientConnection.Command command);
+        void onCommandReceived(@NonNull ColorCommand command);
 
     }
 
@@ -369,12 +406,18 @@ public class NetworkClientFragment extends Fragment {
 
         @Override
         public void commandReceived(@NonNull ClientConnection connection,
-                @NonNull ClientConnection.Command command) {
+                @NonNull ColorCommand command) {
             if (isActiveConnection(connection)) {
                 LOG.d("ClientConnectionCallback: commandReceived() command=" + command);
                 final TargetFragmentCallbacks cb = mTargetFragmentCallbacks;
                 if (cb != null) {
                     cb.onCommandReceived(command);
+                }
+                synchronized (mCommands) {
+                    mCommands.offer(command);
+                    if (mCommands.size() > MAX_COMMAND_HISTORY_SIZE) {
+                        mCommands.poll();
+                    }
                 }
             }
         }
@@ -397,4 +440,5 @@ public class NetworkClientFragment extends Fragment {
         }
 
     }
+
 }

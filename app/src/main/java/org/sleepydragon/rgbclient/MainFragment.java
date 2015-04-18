@@ -30,6 +30,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import java.util.List;
+
 /**
  * The main fragment for the main activity.
  */
@@ -38,10 +40,13 @@ public class MainFragment extends Fragment
 
     private static final Logger LOG = new Logger("MainFragment");
     private static final String KEY_DISPLAYED_COLOR = "displayed_color";
+    private static final String KEY_LAST_COMMAND = "last_command";
 
     private Handler mHandler;
     private NetworkClientFragment mNetworkClientFragment;
+
     private DisplayedColor mDisplayedColor;
+    private ColorCommand mLastCommand;
     private View mColorFillView;
     private TextView mColorTextView;
 
@@ -87,6 +92,17 @@ public class MainFragment extends Fragment
             mDisplayedColor = new DisplayedColor();
         }
 
+        if (savedInstanceState != null && savedInstanceState.containsKey(KEY_LAST_COMMAND)) {
+            mLastCommand = savedInstanceState.getParcelable(KEY_LAST_COMMAND);
+            if (mLastCommand != null) {
+                final List<ColorCommand> missedCommands =
+                        mNetworkClientFragment.getCommandsSince(mLastCommand.id);
+                for (final ColorCommand command : missedCommands) {
+                    mHandler.obtainMessage(R.id.MSG_COMMAND_RECEIVED, command).sendToTarget();
+                }
+            }
+        }
+
         return root;
     }
 
@@ -94,6 +110,9 @@ public class MainFragment extends Fragment
     public void onSaveInstanceState(final Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putParcelable(KEY_DISPLAYED_COLOR, mDisplayedColor);
+        if (mLastCommand != null) {
+            outState.putParcelable(KEY_LAST_COMMAND, mLastCommand);
+        }
     }
 
     /**
@@ -111,11 +130,11 @@ public class MainFragment extends Fragment
         mNetworkClientFragment.restart();
     }
 
-    public void onCommandReceived(@NonNull ClientConnection.Command command) {
+    public void onCommandReceived(@NonNull ColorCommand command) {
         mHandler.obtainMessage(R.id.MSG_COMMAND_RECEIVED, command).sendToTarget();
     }
 
-    private void handleCommand(@NonNull ClientConnection.Command command) {
+    private void handleCommand(@NonNull ColorCommand command) {
         switch (command.instruction) {
             case ABSOLUTE:
                 mDisplayedColor.r = command.r;
@@ -139,15 +158,15 @@ public class MainFragment extends Fragment
     }
 
     /**
-     * An interface to be implemented by the hosting activity to allow this fragment to make
-     * demands on it.
+     * An interface to be implemented by the hosting activity to allow this fragment to make demands
+     * on it.
      */
-    public static interface ActivityCallbacks {
+    public interface ActivityCallbacks {
 
         /**
          * Show the dialog that allows the user to enter the server information.
          */
-        public void showSetServerDialog();
+        void showSetServerDialog();
 
     }
 
@@ -157,7 +176,7 @@ public class MainFragment extends Fragment
         public boolean handleMessage(final Message msg) {
             switch (msg.what) {
                 case R.id.MSG_COMMAND_RECEIVED:
-                    handleCommand((ClientConnection.Command) msg.obj);
+                    handleCommand((ColorCommand) msg.obj);
                     return true;
                 default:
                     return false;
@@ -196,22 +215,23 @@ public class MainFragment extends Fragment
             return "(" + r + ", " + g + ", " + b + ")";
         }
 
-        private static class CreatorImpl implements Parcelable.Creator<DisplayedColor> {
+        public static final Parcelable.Creator<DisplayedColor> CREATOR =
+                new Parcelable.Creator<DisplayedColor>() {
 
-            @Override
-            public DisplayedColor createFromParcel(final Parcel src) {
-                final DisplayedColor result = new DisplayedColor();
-                result.r = src.readInt();
-                result.g = src.readInt();
-                result.b = src.readInt();
-                return result;
-            }
+                    @Override
+                    public DisplayedColor createFromParcel(final Parcel src) {
+                        final DisplayedColor result = new DisplayedColor();
+                        result.r = src.readInt();
+                        result.g = src.readInt();
+                        result.b = src.readInt();
+                        return result;
+                    }
 
-            @Override
-            public DisplayedColor[] newArray(final int size) {
-                return new DisplayedColor[size];
-            }
+                    @Override
+                    public DisplayedColor[] newArray(final int size) {
+                        return new DisplayedColor[size];
+                    }
 
-        }
+                };
     }
 }

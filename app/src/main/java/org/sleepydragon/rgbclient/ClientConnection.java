@@ -18,7 +18,6 @@
 package org.sleepydragon.rgbclient;
 
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -30,22 +29,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Manages a connection with the RGB Server.
  */
 public class ClientConnection implements Runnable {
-
-    public enum Instruction {
-        RELATIVE,
-        ABSOLUTE;
-
-        public static Instruction fromCode(byte code) {
-            switch (code) {
-                case 1:
-                    return RELATIVE;
-                case 2:
-                    return ABSOLUTE;
-                default:
-                    return null;
-            }
-        }
-    }
 
     @NonNull
     private final String mHost;
@@ -104,7 +87,8 @@ public class ClientConnection implements Runnable {
         }
 
         log.d("sending synthetic reset command");
-        final Command resetCommand = new Command(Instruction.ABSOLUTE, 127, 127, 127, true);
+        final ColorCommand resetCommand =
+                new ColorCommand(ColorCommand.Instruction.ABSOLUTE, 127, 127, 127, true);
         mCallback.commandReceived(this, resetCommand);
 
         log.d("connecting to server");
@@ -137,9 +121,16 @@ public class ClientConnection implements Runnable {
                 }
 
                 final byte instructionCode = in.readByte();
-                final Instruction instruction = Instruction.fromCode(instructionCode);
-                if (instruction == null) {
-                    throw new ProtocolException("invalid instruction: " + instructionCode);
+                final ColorCommand.Instruction instruction;
+                switch (instructionCode) {
+                    case 1:
+                        instruction = ColorCommand.Instruction.RELATIVE;
+                        break;
+                    case 2:
+                        instruction = ColorCommand.Instruction.ABSOLUTE;
+                        break;
+                    default:
+                        throw new ProtocolException("invalid instruction: " + instructionCode);
                 }
 
                 final int r, g, b;
@@ -161,7 +152,7 @@ public class ClientConnection implements Runnable {
                 log.d("data received from server: instruction=" + instruction
                         + " (" + r + ", " + g + ", " + b + ")");
 
-                final Command command = new Command(instruction, r, g, b, false);
+                final ColorCommand command = new ColorCommand(instruction, r, g, b, false);
                 mCallback.commandReceived(this, command);
             }
         } catch (IOException e) {
@@ -218,9 +209,9 @@ public class ClientConnection implements Runnable {
     /**
      * Implement this class to receive information about the server connection.
      */
-    public static interface Callback {
+    public interface Callback {
 
-        public enum ConnectionError {
+        enum ConnectionError {
             /**
              * Connection error reported when establishing the initial connection fails.
              */
@@ -244,7 +235,7 @@ public class ClientConnection implements Runnable {
          * @param connected true if a connection was established
          * or false if the connection was closed.
          */
-        public void connectionStateChanged(@NonNull ClientConnection connection, boolean connected);
+        void connectionStateChanged(@NonNull ClientConnection connection, boolean connected);
 
         /**
          * Called when an error occurred in the connection with the server.
@@ -253,7 +244,7 @@ public class ClientConnection implements Runnable {
          * @param error the type of error that occurred.
          * @param message a message describing the error; will never be null.
          */
-        public void connectionError(@NonNull ClientConnection connection,
+        void connectionError(@NonNull ClientConnection connection,
                 @NonNull ConnectionError error, @NonNull String message);
 
         /**
@@ -262,34 +253,8 @@ public class ClientConnection implements Runnable {
          * @param connection the connection from which this event originated; will never be null.
          * @param command the command that was received; will never be null.
          */
-        public void commandReceived(@NonNull ClientConnection connection, @NonNull Command command);
+        void commandReceived(@NonNull ClientConnection connection, @NonNull ColorCommand command);
 
-    }
-
-    /**
-     * Stores information about a command received from the server.
-     */
-    public static class Command {
-
-        @NonNull
-        public final Instruction instruction;
-        public final int r;
-        public final int g;
-        public final int b;
-        public final boolean synthetic;
-
-        public Command(@NonNull Instruction instruction, int r, int g, int b, boolean synthetic) {
-            this.instruction = instruction;
-            this.r = r;
-            this.g = g;
-            this.b = b;
-            this.synthetic = synthetic;
-        }
-
-        @Override
-        public String toString() {
-            return instruction + " (" + r + ", " + g + ", " + b + ") synthetic=" + synthetic;
-        }
     }
 
     /**
