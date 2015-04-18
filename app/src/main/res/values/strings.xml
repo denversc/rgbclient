@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">RGB Client</string>
-    <string name="hello_world">Hello world!</string>
     <string name="action_set_server">Set Server</string>
     <string name="action_restart_network_client">Restart Network Client</string>
 

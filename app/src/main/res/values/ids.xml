@@ -2,4 +2,5 @@
 <resources>
     <item type="id" name="MSG_STOP_CLIENT" />
     <item type="id" name="MSG_START_CLIENT" />
+    <item type="id" name="MSG_COMMAND_RECEIVED" />
 </resources>

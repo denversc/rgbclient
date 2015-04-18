@@ -176,14 +176,13 @@ public class NetworkClientFragment extends Fragment {
                     }
                     return;
                 }
-                connection.setCallback(null);
                 connection.requestStop();
                 mClientConnectionThread.interrupt();
                 mClientConnectionThread = null;
             }
 
-            final ClientConnection connection = new ClientConnection(host, port);
-            connection.setCallback(mClientConnectionCallback);
+            final ClientConnection connection = new ClientConnection(host, port,
+                    mClientConnectionCallback);
             final ClientConnectionThread thread = new ClientConnectionThread(connection);
             thread.start();
 
@@ -203,7 +202,6 @@ public class NetworkClientFragment extends Fragment {
         }
         if (thread != null) {
             final ClientConnection connection = thread.getConnection();
-            connection.setCallback(null);
             connection.requestStop();
             thread.interrupt();
         }
@@ -342,6 +340,12 @@ public class NetworkClientFragment extends Fragment {
          */
         public void showSetServerDialog();
 
+        /**
+         * Process a command received from the server.
+         * @param command the command that was received; will never be null.
+         */
+        public void onCommandReceived(@NonNull ClientConnection.Command command);
+
     }
 
     private class ClientConnectionCallback implements ClientConnection.Callback {
@@ -366,11 +370,23 @@ public class NetworkClientFragment extends Fragment {
         @Override
         public void commandReceived(@NonNull ClientConnection connection,
                 @NonNull ClientConnection.Command command) {
-            LOG.w("ClientConnectionCallback: commandReceived() command=" + command);
+            if (isActiveConnection(connection)) {
+                LOG.d("ClientConnectionCallback: commandReceived() command=" + command);
+                final TargetFragmentCallbacks cb = mTargetFragmentCallbacks;
+                if (cb != null) {
+                    cb.onCommandReceived(command);
+                }
+            }
+        }
+
+        private boolean isActiveConnection(@NonNull ClientConnection connection) {
+            synchronized (mClientConnectionThreadMutex) {
+                return (mClientConnectionThread != null
+                        && mClientConnectionThread.getConnection() == connection);
+            }
         }
 
         private void clearConnection(@NonNull ClientConnection connection) {
-            connection.setCallback(null);
             connection.requestStop();
             synchronized (mClientConnectionThreadMutex) {
                 if (mClientConnectionThread != null

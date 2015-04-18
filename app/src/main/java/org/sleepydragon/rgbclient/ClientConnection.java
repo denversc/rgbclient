@@ -51,9 +51,8 @@ public class ClientConnection implements Runnable {
     private final String mHost;
     private final int mPort;
 
-    @Nullable
-    private Callback mCallback;
-    private final Object mCallbackMutex = new Object();
+    @NonNull
+    private final Callback mCallback;
 
     private final AtomicBoolean mStopRequested = new AtomicBoolean(false);
     private final AtomicBoolean mConnected = new AtomicBoolean(false);
@@ -65,10 +64,14 @@ public class ClientConnection implements Runnable {
      *
      * @param host the host name or IP address of the server; must not be null.
      * @param port the TCP port number of the server.
+     * @param callback the callback to be notified of interesting events; must not be null;
+     * the callbacks will occur on the same thread that invokes {@link #run} and therefore should
+     * return quickly and schedule any long-running work asynchronously.
      */
-    public ClientConnection(@NonNull String host, int port) {
+    public ClientConnection(@NonNull String host, int port, @NonNull Callback callback) {
         mHost = host;
         mPort = port;
+        mCallback = callback;
         mLogger = new Logger("ClientConnection " + host + ":" + port);
     }
 
@@ -88,23 +91,6 @@ public class ClientConnection implements Runnable {
     }
 
     /**
-     * Set the Callback to be notified of interesting event relating to the server connection.
-     * <p/>
-     * The callbacks will occur on the same thread that invokes {@link #run} and therefore should
-     * return quickly and schedule any long-running work asynchronously.
-     * <p/>
-     * This method may be invoked by any thread.
-     *
-     * @param callback the callback to register; may be null to clear the previously-registered
-     * callback.
-     */
-    public void setCallback(@Nullable Callback callback) {
-        synchronized (mCallbackMutex) {
-            mCallback = callback;
-        }
-    }
-
-    /**
      * Connect to the server and start sending callbacks to the registered callback.
      */
     @Override
@@ -117,13 +103,18 @@ public class ClientConnection implements Runnable {
             return;
         }
 
+        log.d("sending synthetic reset command");
+        final Command resetCommand = new Command(Instruction.ABSOLUTE, 127, 127, 127, true);
+        mCallback.commandReceived(this, resetCommand);
+
         log.d("connecting to server");
         final Socket socket;
         try {
             socket = new Socket(mHost, mPort);
         } catch (IOException e) {
             log.w("server connection failed: " + e);
-            notifyConnectionError(Callback.ConnectionError.CONNECTION_ESTABLISHMENT, e.getMessage());
+            mCallback.connectionError(this, Callback.ConnectionError.CONNECTION_ESTABLISHMENT,
+                    e.getMessage());
             return;
         }
 
@@ -137,12 +128,7 @@ public class ClientConnection implements Runnable {
             final InputStream inputStream = socket.getInputStream();
             final DataInputStream in = new DataInputStream(inputStream);
             mConnected.set(true);
-
-            synchronized (mCallbackMutex) {
-                if (mCallback != null) {
-                    mCallback.connectionStateChanged(this, true);
-                }
-            }
+            mCallback.connectionStateChanged(this, true);
 
             while (true) {
                 if (isStopRequested()) {
@@ -174,13 +160,16 @@ public class ClientConnection implements Runnable {
 
                 log.d("data received from server: instruction=" + instruction
                         + " (" + r + ", " + g + ", " + b + ")");
+
+                final Command command = new Command(instruction, r, g, b, false);
+                mCallback.commandReceived(this, command);
             }
         } catch (IOException e) {
             log.w("error reading from server: " + e);
-            notifyConnectionError(Callback.ConnectionError.READ, e.getMessage());
+            mCallback.connectionError(this, Callback.ConnectionError.READ, e.getMessage());
         } catch (ProtocolException e) {
             log.w("protocol error reading from server: " + e.getMessage());
-            notifyConnectionError(Callback.ConnectionError.PROTOCOL, e.getMessage());
+            mCallback.connectionError(this, Callback.ConnectionError.PROTOCOL, e.getMessage());
         } finally {
             log.d("closing connection to server");
             mConnected.set(false);
@@ -189,20 +178,7 @@ public class ClientConnection implements Runnable {
             } catch (IOException e) {
                 // oh well
             } finally {
-                synchronized (mCallbackMutex) {
-                    if (mCallback != null) {
-                        mCallback.connectionStateChanged(this, false);
-                    }
-                }
-            }
-        }
-    }
-
-    private void notifyConnectionError(@NonNull Callback.ConnectionError error,
-            @NonNull String message) {
-        synchronized (mCallbackMutex) {
-            if (mCallback != null) {
-                mCallback.connectionError(this, error, message);
+                mCallback.connectionStateChanged(this, false);
             }
         }
     }
@@ -300,17 +276,19 @@ public class ClientConnection implements Runnable {
         public final int r;
         public final int g;
         public final int b;
+        public final boolean synthetic;
 
-        public Command(@NonNull Instruction instruction, int r, int g, int b) {
+        public Command(@NonNull Instruction instruction, int r, int g, int b, boolean synthetic) {
             this.instruction = instruction;
             this.r = r;
             this.g = g;
             this.b = b;
+            this.synthetic = synthetic;
         }
 
         @Override
         public String toString() {
-            return instruction + " (" + r + ", " + g + ", " + b + ")";
+            return instruction + " (" + r + ", " + g + ", " + b + ") synthetic=" + synthetic;
         }
     }
 
