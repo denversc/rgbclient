@@ -25,12 +25,16 @@ import android.os.Message;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.v4.util.CircularArray;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * The main fragment for the main activity.
@@ -40,13 +44,14 @@ public class MainFragment extends Fragment
 
     private static final Logger LOG = new Logger("MainFragment");
     private static final String KEY_DISPLAYED_COLOR = "displayed_color";
-    private static final String KEY_LAST_COMMAND = "last_command";
+    private static final String KEY_UNPROCESSED_COMMANDS = "unprocessed_commands";
+
+    private final CircularArray<ColorCommand> mUnprocessedCommandQueue = new CircularArray<>();
 
     private Handler mHandler;
     private NetworkClientFragment mNetworkClientFragment;
 
     private DisplayedColor mDisplayedColor;
-    private ColorCommand mLastCommand;
     private View mColorFillView;
     private TextView mColorTextView;
 
@@ -70,6 +75,8 @@ public class MainFragment extends Fragment
             mNetworkClientFragment.setTargetFragment(this, 0);
             fm.beginTransaction().add(mNetworkClientFragment, NetworkClientFragment.TAG).commit();
         }
+
+        restoreCommandsState(savedInstanceState);
     }
 
     @Override
@@ -81,38 +88,64 @@ public class MainFragment extends Fragment
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
+        LOG.v("onCreateView() savedInstanceState=" + savedInstanceState);
         final View root = inflater.inflate(R.layout.fragment_main, container, false);
         mColorFillView = root.findViewById(R.id.color_fill);
         mColorTextView = (TextView) root.findViewById(R.id.color_text);
+        return root;
+    }
 
-        if (savedInstanceState != null && savedInstanceState.containsKey(KEY_DISPLAYED_COLOR)) {
-            mDisplayedColor = savedInstanceState.getParcelable(KEY_DISPLAYED_COLOR);
+    private void restoreCommandsState(@Nullable Bundle state) {
+        if (state != null && state.containsKey(KEY_DISPLAYED_COLOR)) {
+            mDisplayedColor = state.getParcelable(KEY_DISPLAYED_COLOR);
             updateDisplayedColor();
         } else {
             mDisplayedColor = new DisplayedColor();
         }
 
-        if (savedInstanceState != null && savedInstanceState.containsKey(KEY_LAST_COMMAND)) {
-            mLastCommand = savedInstanceState.getParcelable(KEY_LAST_COMMAND);
-            if (mLastCommand != null) {
-                final List<ColorCommand> missedCommands =
-                        mNetworkClientFragment.getCommandsSince(mLastCommand.id);
-                for (final ColorCommand command : missedCommands) {
-                    mHandler.obtainMessage(R.id.MSG_COMMAND_RECEIVED, command).sendToTarget();
+        ColorCommand lastCommand = null;
+        if (state != null) {
+            final ArrayList<ColorCommand> unprocessedCommands =
+                    state.getParcelableArrayList(KEY_UNPROCESSED_COMMANDS);
+            if (unprocessedCommands != null) {
+                synchronized (mUnprocessedCommandQueue) {
+                    for (final ColorCommand command : unprocessedCommands) {
+                        mUnprocessedCommandQueue.addLast(command);
+                        lastCommand = command;
+                    }
                 }
             }
         }
 
-        return root;
+        final UUID lastCommandId = (lastCommand == null) ? null : lastCommand.id;
+        final List<ColorCommand> missedCommands =
+                mNetworkClientFragment.getCommandsSince(lastCommandId);
+        synchronized (mUnprocessedCommandQueue) {
+            for (final ColorCommand command : missedCommands) {
+                mUnprocessedCommandQueue.addLast(command);
+            }
+        }
+
+        mHandler.removeMessages(R.id.MSG_COMMANDS_RECEIVED);
+        mHandler.sendEmptyMessage(R.id.MSG_COMMANDS_RECEIVED);
     }
 
     @Override
     public void onSaveInstanceState(final Bundle outState) {
+        LOG.v("onSaveInstanceState()");
         super.onSaveInstanceState(outState);
+
         outState.putParcelable(KEY_DISPLAYED_COLOR, mDisplayedColor);
-        if (mLastCommand != null) {
-            outState.putParcelable(KEY_LAST_COMMAND, mLastCommand);
+
+        final ArrayList<ColorCommand> unprocessedCommands;
+        synchronized (mUnprocessedCommandQueue) {
+            final int size = mUnprocessedCommandQueue.size();
+            unprocessedCommands = new ArrayList<>(size);
+            for (int i=0; i<size; i++) {
+                unprocessedCommands.add(mUnprocessedCommandQueue.get(i));
+            }
         }
+        outState.putParcelableArrayList(KEY_UNPROCESSED_COMMANDS, unprocessedCommands);
     }
 
     /**
@@ -131,21 +164,31 @@ public class MainFragment extends Fragment
     }
 
     public void onCommandReceived(@NonNull ColorCommand command) {
-        mHandler.obtainMessage(R.id.MSG_COMMAND_RECEIVED, command).sendToTarget();
+        synchronized (mUnprocessedCommandQueue) {
+            mUnprocessedCommandQueue.addLast(command);
+        }
+        mHandler.removeMessages(R.id.MSG_COMMANDS_RECEIVED);
+        mHandler.sendEmptyMessage(R.id.MSG_COMMANDS_RECEIVED);
     }
 
-    private void handleCommand(@NonNull ColorCommand command) {
-        switch (command.instruction) {
-            case ABSOLUTE:
-                mDisplayedColor.r = command.r;
-                mDisplayedColor.g = command.g;
-                mDisplayedColor.b = command.b;
-                break;
-            case RELATIVE:
-                mDisplayedColor.r += command.r;
-                mDisplayedColor.g += command.g;
-                mDisplayedColor.b += command.b;
-                break;
+    private void processCommands() {
+        synchronized (mUnprocessedCommandQueue) {
+            while (mUnprocessedCommandQueue.size() > 0) {
+                final ColorCommand command = mUnprocessedCommandQueue.popFirst();
+
+                switch (command.instruction) {
+                    case ABSOLUTE:
+                        mDisplayedColor.r = command.r;
+                        mDisplayedColor.g = command.g;
+                        mDisplayedColor.b = command.b;
+                        break;
+                    case RELATIVE:
+                        mDisplayedColor.r += command.r;
+                        mDisplayedColor.g += command.g;
+                        mDisplayedColor.b += command.b;
+                        break;
+                }
+            }
         }
 
         updateDisplayedColor();
@@ -175,8 +218,8 @@ public class MainFragment extends Fragment
         @Override
         public boolean handleMessage(final Message msg) {
             switch (msg.what) {
-                case R.id.MSG_COMMAND_RECEIVED:
-                    handleCommand((ColorCommand) msg.obj);
+                case R.id.MSG_COMMANDS_RECEIVED:
+                    processCommands();
                     return true;
                 default:
                     return false;
