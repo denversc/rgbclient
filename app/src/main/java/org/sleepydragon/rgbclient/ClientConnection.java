@@ -151,12 +151,12 @@ public class ClientConnection implements Runnable {
                 if (!resetCommandSent) {
                     log.d("sending synthetic reset command");
                     final ColorCommand resetCommand =
-                            new ColorCommand(ColorCommand.Instruction.ABSOLUTE, 127, 127, 127, true);
+                            new ColorCommand(ColorCommand.Instruction.ABSOLUTE, 127, 127, 127);
                     mCallback.commandReceived(this, resetCommand);
                     resetCommandSent =true;
                 }
 
-                final ColorCommand command = new ColorCommand(instruction, r, g, b, false);
+                final ColorCommand command = new ColorCommand(instruction, r, g, b);
                 mCallback.commandReceived(this, command);
             }
         } catch (IOException e) {

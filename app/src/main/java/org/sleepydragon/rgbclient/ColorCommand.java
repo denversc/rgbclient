@@ -42,20 +42,18 @@ public class ColorCommand implements Parcelable {
     public final int r;
     public final int g;
     public final int b;
-    public final boolean synthetic;
 
-    public ColorCommand(@NonNull Instruction instruction, int r, int g, int b, boolean synthetic) {
-        this(UUID.randomUUID(), instruction, r, g, b, synthetic);
+    public ColorCommand(@NonNull Instruction instruction, int r, int g, int b) {
+        this(UUID.randomUUID(), instruction, r, g, b);
     }
 
     public ColorCommand(@NonNull UUID id, @NonNull Instruction instruction,
-            int r, int g, int b, boolean synthetic) {
+            int r, int g, int b) {
         this.id = id;
         this.instruction = instruction;
         this.r = r;
         this.g = g;
         this.b = b;
-        this.synthetic = synthetic;
     }
 
     @Override
@@ -70,12 +68,11 @@ public class ColorCommand implements Parcelable {
         dest.writeInt(r);
         dest.writeInt(g);
         dest.writeInt(b);
-        dest.writeInt(synthetic ? 1 : 0);
     }
 
     @Override
     public String toString() {
-        return instruction + " (" + r + ", " + g + ", " + b + ") synthetic=" + synthetic;
+        return instruction + " (" + r + ", " + g + ", " + b + ")";
     }
 
     @Override
@@ -85,7 +82,6 @@ public class ColorCommand implements Parcelable {
         hashCode += g * 97787;
         hashCode += b * 97673;
         hashCode += instruction.ordinal();
-        hashCode += synthetic ? 1 : 0;
         return hashCode;
     }
 
@@ -99,7 +95,7 @@ public class ColorCommand implements Parcelable {
         final ColorCommand other = (ColorCommand) o;
         return id.equals(other.id) &&
                 r == other.r && g == other.g && b == other.b &&
-                instruction == other.instruction && synthetic == other.synthetic;
+                instruction == other.instruction;
     }
 
     public static final Parcelable.Creator<ColorCommand> CREATOR =
@@ -112,12 +108,10 @@ public class ColorCommand implements Parcelable {
                     final int r = src.readInt();
                     final int g = src.readInt();
                     final int b = src.readInt();
-                    final int syntheticInt = src.readInt();
 
                     final UUID id = parcelUuid.getUuid();
                     final Instruction instruction = Instruction.values()[instructionOrdinal];
-                    final boolean synthetic = (syntheticInt != 0);
-                    return new ColorCommand(id, instruction, r, g, b, synthetic);
+                    return new ColorCommand(id, instruction, r, g, b);
                 }
 
                 @Override
