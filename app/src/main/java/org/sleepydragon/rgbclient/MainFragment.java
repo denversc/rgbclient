@@ -34,6 +34,7 @@ import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.CheckBox;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -339,17 +340,33 @@ public class MainFragment extends Fragment
 
         private static class ViewHolderImpl extends RecyclerView.ViewHolder {
 
-            private final TextView mTextView;
+            private final CheckBox mView;
 
-            public ViewHolderImpl(TextView textView) {
-                super(textView);
-                mTextView = textView;
+            @Nullable
+            private ColorCommand mCommand;
+
+            public ViewHolderImpl(@NonNull CheckBox view) {
+                super(view);
+                mView = view;
             }
 
-            private void setCommand(@Nullable ColorCommand command) {
-                mTextView.setText(command == null ? "" : command.toString());
+            public void setCommand(@Nullable ColorCommand command, boolean selected) {
+                if (command == null) {
+                    clearCommand();
+                } else if (command.equals(mCommand)) {
+                    mView.setSelected(selected);
+                } else {
+                    mCommand = command;
+                    mView.setText(command.instruction
+                            + " (" + command.r + ", " + command.g + ", " + command.b + ")");
+                    mView.setSelected(selected);
+                }
             }
 
+            public void clearCommand() {
+                mCommand = null;
+                mView.setText("");
+            }
         }
 
         private class AdapterImpl extends RecyclerView.Adapter<ViewHolderImpl> {
@@ -369,23 +386,26 @@ public class MainFragment extends Fragment
 
             @Override
             public ViewHolderImpl onCreateViewHolder(final ViewGroup parent, final int viewType) {
-                final TextView textView = new TextView(parent.getContext());
-                return new ViewHolderImpl(textView);
+                final CheckBox view = new CheckBox(parent.getContext());
+                return new ViewHolderImpl(view);
             }
 
             @Override
             public void onBindViewHolder(final ViewHolderImpl holder, final int position) {
                 final ColorCommand command;
+                final boolean selected;
                 synchronized (ColorState.this) {
                     command = mCommandHistory.get(position);
+                    selected = mSelectedRelativeCommands.contains(command)
+                            || mSelectedAbsoluteCommand == command;
                 }
-                holder.setCommand(command);
+                holder.setCommand(command, selected);
             }
 
             @Override
             public void onViewRecycled(final ViewHolderImpl holder) {
                 super.onViewRecycled(holder);
-                holder.setCommand(null);
+                holder.clearCommand();
             }
 
             @Override
