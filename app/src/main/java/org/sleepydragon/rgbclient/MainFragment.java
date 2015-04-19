@@ -383,12 +383,12 @@ public class MainFragment extends Fragment
                 if (command == null) {
                     clearCommand();
                 } else if (command.equals(mCommand)) {
-                    mView.setSelected(selected);
+                    mView.setChecked(selected);
                 } else {
                     mCommand = command;
                     mView.setText(command.instruction
                             + " (" + command.r + ", " + command.g + ", " + command.b + ")");
-                    mView.setSelected(selected);
+                    mView.setChecked(selected);
                 }
             }
 
