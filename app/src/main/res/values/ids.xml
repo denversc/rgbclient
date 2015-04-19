@@ -3,4 +3,5 @@
     <item type="id" name="MSG_STOP_CLIENT" />
     <item type="id" name="MSG_START_CLIENT" />
     <item type="id" name="MSG_PROCESS_QUEUED_COMMANDS" />
+    <item type="id" name="MSG_UPDATE_DISPLAYED_COLOR" />
 </resources>

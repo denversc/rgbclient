@@ -35,6 +35,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -81,6 +82,7 @@ public class MainFragment extends Fragment
                 mCommandQueue.addAll(commandQueue);
             }
         }
+        mColorState.setEventHandler(mHandler);
     }
 
     @Override
@@ -193,7 +195,7 @@ public class MainFragment extends Fragment
             text = "(" + mRGB.r + ", " + mRGB.g + ", " + mRGB.b + ")";
         } else {
             color = Color.TRANSPARENT;
-            text = ";";
+            text = "";
         }
 
         mColorFillView.setBackgroundColor(color);
@@ -221,6 +223,9 @@ public class MainFragment extends Fragment
                 case R.id.MSG_PROCESS_QUEUED_COMMANDS:
                     processQueuedCommands();
                     return true;
+                case R.id.MSG_UPDATE_DISPLAYED_COLOR:
+                    updateDisplayedColor();
+                    return true;
                 default:
                     return false;
             }
@@ -236,8 +241,15 @@ public class MainFragment extends Fragment
         private final CircularArray<ColorCommand> mCommandHistory;
         private final RecyclerView.Adapter<ViewHolderImpl> mRecyclerViewAdapter;
 
+        @Nullable
+        private Handler mEventHandler;
+
         public ColorState() {
             this(null, null, null);
+        }
+
+        public void setEventHandler(@Nullable Handler handler) {
+            mEventHandler = handler;
         }
 
         public ColorState(@Nullable List<ColorCommand> commandHistory,
@@ -371,25 +383,38 @@ public class MainFragment extends Fragment
         private static class ViewHolderImpl extends RecyclerView.ViewHolder {
 
             private final CheckBox mView;
+            private final CompoundButton.OnCheckedChangeListener mCheckedChangeListener;
 
             @Nullable
             private ColorCommand mCommand;
 
-            public ViewHolderImpl(@NonNull CheckBox view) {
+            public ViewHolderImpl(@NonNull CheckBox view,
+                    @NonNull CompoundButton.OnCheckedChangeListener checkedChangeListener) {
                 super(view);
                 mView = view;
+                mCheckedChangeListener = checkedChangeListener;
+                view.setTag(this);
+                mView.setOnCheckedChangeListener(checkedChangeListener);
             }
 
             public void setCommand(@Nullable ColorCommand command, boolean selected) {
+                final Boolean checked;
                 if (command == null) {
                     clearCommand();
+                    checked = null;
                 } else if (command.equals(mCommand)) {
-                    mView.setChecked(selected);
+                    checked = selected;
                 } else {
                     mCommand = command;
                     mView.setText(command.instruction
                             + " (" + command.r + ", " + command.g + ", " + command.b + ")");
-                    mView.setChecked(selected);
+                    checked = selected;
+                }
+
+                if (checked != null) {
+                    mView.setOnCheckedChangeListener(null);
+                    mView.setChecked(checked);
+                    mView.setOnCheckedChangeListener(mCheckedChangeListener);
                 }
             }
 
@@ -397,12 +422,20 @@ public class MainFragment extends Fragment
                 mCommand = null;
                 mView.setText("");
             }
+
+            @Nullable
+            public ColorCommand getCommand() {
+                return mCommand;
+            }
         }
 
         private class AdapterImpl extends RecyclerView.Adapter<ViewHolderImpl> {
 
+            private final CompoundButton.OnCheckedChangeListener mCheckBoxClickListener;
+
             public AdapterImpl() {
                 setHasStableIds(true);
+                mCheckBoxClickListener = new CheckBoxClickListenerImpl();
             }
 
             @Override
@@ -414,9 +447,8 @@ public class MainFragment extends Fragment
             @Override
             public ViewHolderImpl onCreateViewHolder(final ViewGroup parent, final int viewType) {
                 final LayoutInflater inflater = LayoutInflater.from(parent.getContext());
-                final Object o = inflater.inflate(R.layout.color_command, null);
-                final CheckBox view = (CheckBox) o;
-                return new ViewHolderImpl(view);
+                final CheckBox view = (CheckBox) inflater.inflate(R.layout.color_command, null);
+                return new ViewHolderImpl(view, mCheckBoxClickListener);
             }
 
             @Override
@@ -438,6 +470,49 @@ public class MainFragment extends Fragment
                 return mCommandHistory.size();
             }
 
+            private class CheckBoxClickListenerImpl
+                    implements CompoundButton.OnCheckedChangeListener {
+
+                @Override
+                public void onCheckedChanged(final CompoundButton view, final boolean checked) {
+                    final ViewHolderImpl viewHolder = (ViewHolderImpl) view.getTag();
+                    final ColorCommand command = viewHolder.getCommand();
+                    if (command == null) {
+                        return;
+                    }
+
+                    switch (command.instruction) {
+                        case ABSOLUTE: {
+                            if (checked) {
+                                mSelectedAbsoluteCommand = command;
+                                mSelectedRelativeCommands.clear();
+                                notifyItemRangeChanged(0, getItemCount());
+                            } else {
+                                mSelectedAbsoluteCommand = null;
+                            }
+                            break;
+                        }
+                        case RELATIVE: {
+                            if (checked) {
+                                mSelectedRelativeCommands.add(command);
+                            } else {
+                                mSelectedRelativeCommands.remove(command);
+                            }
+                            break;
+                        }
+                        default:
+                            throw new AssertionError("unknown command instruction: "
+                                    + command.instruction);
+                    }
+
+                    final Handler handler = mEventHandler;
+                    if (handler != null) {
+                        handler.removeMessages(R.id.MSG_UPDATE_DISPLAYED_COLOR);
+                        handler.sendEmptyMessage(R.id.MSG_UPDATE_DISPLAYED_COLOR);
+                    }
+                }
+
+            }
         }
     }
 
