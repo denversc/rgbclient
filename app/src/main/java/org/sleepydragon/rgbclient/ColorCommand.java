@@ -78,6 +78,30 @@ public class ColorCommand implements Parcelable {
         return instruction + " (" + r + ", " + g + ", " + b + ") synthetic=" + synthetic;
     }
 
+    @Override
+    public int hashCode() {
+        int hashCode = id.hashCode();
+        hashCode += r * 97813;
+        hashCode += g * 97787;
+        hashCode += b * 97673;
+        hashCode += instruction.ordinal();
+        hashCode += synthetic ? 1 : 0;
+        return hashCode;
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+        if (o == this) {
+            return true;
+        } else if (!(o instanceof ColorCommand)) {
+            return false;
+        }
+        final ColorCommand other = (ColorCommand) o;
+        return id.equals(other.id) &&
+                r == other.r && g == other.g && b == other.b &&
+                instruction == other.instruction && synthetic == other.synthetic;
+    }
+
     public static final Parcelable.Creator<ColorCommand> CREATOR =
             new Parcelable.Creator<ColorCommand>() {
 
