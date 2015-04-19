@@ -19,6 +19,7 @@ package org.sleepydragon.rgbclient;
 
 import android.app.Fragment;
 import android.app.FragmentManager;
+import android.content.Context;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
@@ -28,9 +29,12 @@ import android.os.Parcelable;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.util.CircularArray;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import java.util.ArrayList;
@@ -111,6 +115,16 @@ public class MainFragment extends Fragment
         final View root = inflater.inflate(R.layout.fragment_main, container, false);
         mColorFillView = root.findViewById(R.id.color_fill);
         mColorTextView = (TextView) root.findViewById(R.id.color_text);
+
+        final Context context = container.getContext();
+        final RecyclerView commandHistoryRecyclerView = new RecyclerView(context);
+        commandHistoryRecyclerView.setHasFixedSize(true);
+        commandHistoryRecyclerView.setLayoutManager(new LinearLayoutManager(context));
+        commandHistoryRecyclerView.setAdapter(mColorState.getRecyclerViewAdapter());
+        final FrameLayout commandHistoryLayout =
+                (FrameLayout) root.findViewById(R.id.command_history);
+        commandHistoryLayout.addView(commandHistoryRecyclerView);
+
         return root;
     }
 
@@ -193,6 +207,7 @@ public class MainFragment extends Fragment
         private final Set<ColorCommand> mSelectedRelativeCommands;
         private ColorCommand mSelectedAbsoluteCommand;
         private final CircularArray<ColorCommand> mCommandHistory;
+        private final RecyclerView.Adapter<ViewHolderImpl> mRecyclerViewAdapter;
 
         public ColorState() {
             this(null, null, null);
@@ -216,6 +231,8 @@ public class MainFragment extends Fragment
                     mCommandHistory.addLast(command);
                 }
             }
+
+            mRecyclerViewAdapter = new AdapterImpl();
         }
 
         public synchronized boolean getEffectiveColor(@NonNull RGB rgb) {
@@ -240,9 +257,14 @@ public class MainFragment extends Fragment
         }
 
         public synchronized void addCommand(@NonNull ColorCommand command) {
-            mCommandHistory.addLast(command);
-            if (mCommandHistory.size() > MAX_COMMAND_HISTORY) {
-                mCommandHistory.popFirst();
+            // only add "real" commands to the historoy
+            if (! command.synthetic) {
+                final int position = mCommandHistory.size();
+                mCommandHistory.addLast(command);
+                if (mCommandHistory.size() > MAX_COMMAND_HISTORY) {
+                    mCommandHistory.popFirst();
+                }
+                mRecyclerViewAdapter.notifyItemInserted(position);
             }
 
             switch (command.instruction) {
@@ -261,6 +283,11 @@ public class MainFragment extends Fragment
         @Nullable
         public synchronized ColorCommand getLastAddedCommand() {
             return (mCommandHistory.isEmpty()) ? null : mCommandHistory.getLast();
+        }
+
+        @NonNull
+        public synchronized RecyclerView.Adapter getRecyclerViewAdapter() {
+            return mRecyclerViewAdapter;
         }
 
         public static class RGB {
@@ -309,6 +336,66 @@ public class MainFragment extends Fragment
                     }
 
                 };
+
+        private static class ViewHolderImpl extends RecyclerView.ViewHolder {
+
+            private final TextView mTextView;
+
+            public ViewHolderImpl(TextView textView) {
+                super(textView);
+                mTextView = textView;
+            }
+
+            private void setCommand(@Nullable ColorCommand command) {
+                mTextView.setText(command == null ? "" : command.toString());
+            }
+
+        }
+
+        private class AdapterImpl extends RecyclerView.Adapter<ViewHolderImpl> {
+
+            public AdapterImpl() {
+                setHasStableIds(true);
+            }
+
+            @Override
+            public long getItemId(final int position) {
+                final ColorCommand command;
+                synchronized (ColorState.this) {
+                    command = mCommandHistory.get(position);
+                }
+                return command.id.getLeastSignificantBits();
+            }
+
+            @Override
+            public ViewHolderImpl onCreateViewHolder(final ViewGroup parent, final int viewType) {
+                final TextView textView = new TextView(parent.getContext());
+                return new ViewHolderImpl(textView);
+            }
+
+            @Override
+            public void onBindViewHolder(final ViewHolderImpl holder, final int position) {
+                final ColorCommand command;
+                synchronized (ColorState.this) {
+                    command = mCommandHistory.get(position);
+                }
+                holder.setCommand(command);
+            }
+
+            @Override
+            public void onViewRecycled(final ViewHolderImpl holder) {
+                super.onViewRecycled(holder);
+                holder.setCommand(null);
+            }
+
+            @Override
+            public int getItemCount() {
+                synchronized (ColorState.this) {
+                    return mCommandHistory.size();
+                }
+            }
+
+        }
     }
 
 }
