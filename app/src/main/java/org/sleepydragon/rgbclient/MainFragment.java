@@ -284,16 +284,6 @@ public class MainFragment extends Fragment
         }
 
         public void addCommand(@NonNull ColorCommand command) {
-            // only add "real" commands to the historoy
-            if (! command.synthetic) {
-                final int position = mCommandHistory.size();
-                mCommandHistory.addLast(command);
-                if (mCommandHistory.size() > MAX_COMMAND_HISTORY) {
-                    mCommandHistory.popFirst();
-                }
-                mRecyclerViewAdapter.notifyItemInserted(position);
-            }
-
             switch (command.instruction) {
                 case ABSOLUTE:
                     mSelectedAbsoluteCommand = command;
@@ -304,6 +294,19 @@ public class MainFragment extends Fragment
                     break;
                 default:
                     throw new AssertionError("unknown instruction type: " + command.instruction);
+            }
+
+            // only add "real" commands to the historoy
+            if (! command.synthetic) {
+                final int position = mCommandHistory.size();
+                mCommandHistory.addLast(command);
+                if (mCommandHistory.size() <= MAX_COMMAND_HISTORY) {
+                    mRecyclerViewAdapter.notifyItemInserted(position);
+                } else {
+                    mCommandHistory.popFirst();
+                    mRecyclerViewAdapter.notifyItemRemoved(0);
+                    mRecyclerViewAdapter.notifyItemInserted(position-1);
+                }
             }
         }
 
