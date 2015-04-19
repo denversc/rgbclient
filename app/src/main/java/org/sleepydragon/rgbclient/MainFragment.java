@@ -52,8 +52,10 @@ public class MainFragment extends Fragment
 
     private static final Logger LOG = new Logger("MainFragment");
     private static final String KEY_COLOR_STATE = "color_state";
+    private static final String KEY_COMMAND_QUEUE = "command_queue";
 
     private final ColorState.RGB mRGB = new ColorState.RGB();
+    private final ArrayList<ColorCommand> mCommandQueue = new ArrayList<>();
 
     private Handler mHandler;
     private NetworkClientFragment mNetworkClientFragment;
@@ -72,6 +74,12 @@ public class MainFragment extends Fragment
             mColorState = new ColorState();
         } else {
             mColorState = savedInstanceState.getParcelable(KEY_COLOR_STATE);
+
+            final ArrayList<ColorCommand> commandQueue =
+                    savedInstanceState.getParcelableArrayList(KEY_COMMAND_QUEUE);
+            synchronized (mCommandQueue) {
+                mCommandQueue.addAll(commandQueue);
+            }
         }
     }
 
@@ -92,15 +100,18 @@ public class MainFragment extends Fragment
         updateDisplayedColor();
 
         // add any color commands that were received during the configuration change
-        final ColorCommand lastCommand = mColorState.getLastAddedCommand();
-        final UUID lastCommandId = (lastCommand == null) ? null : lastCommand.id;
-        final List<ColorCommand> missingCommands =
-                mNetworkClientFragment.getCommandsSince(lastCommandId);
-        for (final ColorCommand command : missingCommands) {
-            mColorState.addCommand(command);
+        synchronized (mCommandQueue) {
+            final ColorCommand lastCommand;
+            if (mCommandQueue.size() > 0) {
+                lastCommand = mCommandQueue.get(mCommandQueue.size() - 1);
+            } else {
+                lastCommand = mColorState.getLastAddedCommand();
+            }
+            final UUID lastCommandId = (lastCommand == null) ? null : lastCommand.id;
+            mNetworkClientFragment.getCommandsSince(lastCommandId, mCommandQueue);
         }
-        mHandler.removeMessages(R.id.MSG_UPDATE_DISPLAYED_COLOR);
-        mHandler.sendEmptyMessage(R.id.MSG_UPDATE_DISPLAYED_COLOR);
+        mHandler.removeMessages(R.id.MSG_PROCESS_QUEUED_COMMANDS);
+        mHandler.sendEmptyMessage(R.id.MSG_PROCESS_QUEUED_COMMANDS);
     }
 
     @Override
@@ -134,6 +145,9 @@ public class MainFragment extends Fragment
         LOG.v("onSaveInstanceState()");
         super.onSaveInstanceState(outState);
         outState.putParcelable(KEY_COLOR_STATE, mColorState);
+        synchronized (mCommandQueue) {
+            outState.putParcelableArrayList(KEY_COMMAND_QUEUE, mCommandQueue);
+        }
     }
 
     /**
@@ -152,9 +166,21 @@ public class MainFragment extends Fragment
     }
 
     public void onCommandReceived(@NonNull ColorCommand command) {
-        mColorState.addCommand(command);
-        mHandler.removeMessages(R.id.MSG_UPDATE_DISPLAYED_COLOR);
-        mHandler.sendEmptyMessage(R.id.MSG_UPDATE_DISPLAYED_COLOR);
+        synchronized (mCommandQueue) {
+            mCommandQueue.add(command);
+        }
+        mHandler.removeMessages(R.id.MSG_PROCESS_QUEUED_COMMANDS);
+        mHandler.sendEmptyMessage(R.id.MSG_PROCESS_QUEUED_COMMANDS);
+    }
+
+    private void processQueuedCommands() {
+        synchronized (mCommandQueue) {
+            for (final ColorCommand command : mCommandQueue) {
+                mColorState.addCommand(command);
+            }
+            mCommandQueue.clear();
+        }
+        updateDisplayedColor();
     }
 
     private void updateDisplayedColor() {
@@ -192,8 +218,8 @@ public class MainFragment extends Fragment
         @Override
         public boolean handleMessage(final Message msg) {
             switch (msg.what) {
-                case R.id.MSG_UPDATE_DISPLAYED_COLOR:
-                    updateDisplayedColor();
+                case R.id.MSG_PROCESS_QUEUED_COMMANDS:
+                    processQueuedCommands();
                     return true;
                 default:
                     return false;
@@ -236,7 +262,7 @@ public class MainFragment extends Fragment
             mRecyclerViewAdapter = new AdapterImpl();
         }
 
-        public synchronized boolean getEffectiveColor(@NonNull RGB rgb) {
+        public boolean getEffectiveColor(@NonNull RGB rgb) {
             if (mSelectedAbsoluteCommand == null) {
                 return false;
             }
@@ -257,7 +283,7 @@ public class MainFragment extends Fragment
             return true;
         }
 
-        public synchronized void addCommand(@NonNull ColorCommand command) {
+        public void addCommand(@NonNull ColorCommand command) {
             // only add "real" commands to the historoy
             if (! command.synthetic) {
                 final int position = mCommandHistory.size();
@@ -282,12 +308,12 @@ public class MainFragment extends Fragment
         }
 
         @Nullable
-        public synchronized ColorCommand getLastAddedCommand() {
+        public ColorCommand getLastAddedCommand() {
             return (mCommandHistory.isEmpty()) ? null : mCommandHistory.getLast();
         }
 
         @NonNull
-        public synchronized RecyclerView.Adapter getRecyclerViewAdapter() {
+        public RecyclerView.Adapter getRecyclerViewAdapter() {
             return mRecyclerViewAdapter;
         }
 
@@ -303,7 +329,7 @@ public class MainFragment extends Fragment
         }
 
         @Override
-        public synchronized void writeToParcel(final Parcel dest, final int flags) {
+        public void writeToParcel(final Parcel dest, final int flags) {
             dest.writeParcelable(mSelectedAbsoluteCommand, 0);
 
             final List<ColorCommand> selectedRelativeCommands = new ArrayList<>();
@@ -377,10 +403,7 @@ public class MainFragment extends Fragment
 
             @Override
             public long getItemId(final int position) {
-                final ColorCommand command;
-                synchronized (ColorState.this) {
-                    command = mCommandHistory.get(position);
-                }
+                final ColorCommand command = mCommandHistory.get(position);
                 return command.id.getLeastSignificantBits();
             }
 
@@ -392,13 +415,9 @@ public class MainFragment extends Fragment
 
             @Override
             public void onBindViewHolder(final ViewHolderImpl holder, final int position) {
-                final ColorCommand command;
-                final boolean selected;
-                synchronized (ColorState.this) {
-                    command = mCommandHistory.get(position);
-                    selected = mSelectedRelativeCommands.contains(command)
+                final ColorCommand command = mCommandHistory.get(position);
+                final boolean selected = mSelectedRelativeCommands.contains(command)
                             || mSelectedAbsoluteCommand == command;
-                }
                 holder.setCommand(command, selected);
             }
 
@@ -410,9 +429,7 @@ public class MainFragment extends Fragment
 
             @Override
             public int getItemCount() {
-                synchronized (ColorState.this) {
-                    return mCommandHistory.size();
-                }
+                return mCommandHistory.size();
             }
 
         }

@@ -37,7 +37,6 @@ import android.support.annotation.Nullable;
 import android.support.v4.content.LocalBroadcastManager;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.UUID;
@@ -230,16 +229,13 @@ public class NetworkClientFragment extends Fragment {
         startClient();
     }
 
-    @NonNull
-    public List<ColorCommand> getCommandsSince(@Nullable UUID id) {
-        final List<ColorCommand> result = new ArrayList<>();
-
+    public void getCommandsSince(@Nullable UUID id, @NonNull List<ColorCommand> commands) {
         boolean idFound = false;
         synchronized (mCommands) {
             if (id != null) {
                 for (final ColorCommand command : mCommands) {
                     if (idFound) {
-                        result.add(command);
+                        commands.add(command);
                     } else if (command.id.equals(id)) {
                         idFound = true;
                     }
@@ -249,15 +245,9 @@ public class NetworkClientFragment extends Fragment {
             // if the given ID was not found, then it must have fallen off the end; so treat all
             // command as being new
             if (! idFound) {
-                // sanity check
-                if (result.size() > 0) {
-                    throw new AssertionError("result.size()==" + result.size());
-                }
-                result.addAll(mCommands);
+                commands.addAll(mCommands);
             }
         }
-
-        return result;
     }
 
     private class LoadSettingsAsyncTask extends Settings.GetSharedPreferencesAsyncTask {
