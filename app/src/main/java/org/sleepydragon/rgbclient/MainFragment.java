@@ -288,6 +288,7 @@ public class MainFragment extends Fragment
                 case ABSOLUTE:
                     mSelectedAbsoluteCommand = command;
                     mSelectedRelativeCommands.clear();
+                    mRecyclerViewAdapter.notifyItemRangeChanged(0, mCommandHistory.size());
                     break;
                 case RELATIVE:
                     mSelectedRelativeCommands.add(command);
@@ -412,7 +413,9 @@ public class MainFragment extends Fragment
 
             @Override
             public ViewHolderImpl onCreateViewHolder(final ViewGroup parent, final int viewType) {
-                final CheckBox view = new CheckBox(parent.getContext());
+                final LayoutInflater inflater = LayoutInflater.from(parent.getContext());
+                final Object o = inflater.inflate(R.layout.color_command, null);
+                final CheckBox view = (CheckBox) o;
                 return new ViewHolderImpl(view);
             }
 
