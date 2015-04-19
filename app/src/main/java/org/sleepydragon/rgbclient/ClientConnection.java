@@ -86,11 +86,6 @@ public class ClientConnection implements Runnable {
             return;
         }
 
-        log.d("sending synthetic reset command");
-        final ColorCommand resetCommand =
-                new ColorCommand(ColorCommand.Instruction.ABSOLUTE, 127, 127, 127, true);
-        mCallback.commandReceived(this, resetCommand);
-
         log.d("connecting to server");
         final Socket socket;
         try {
@@ -114,6 +109,7 @@ public class ClientConnection implements Runnable {
             mConnected.set(true);
             mCallback.connectionStateChanged(this, true);
 
+            boolean resetCommandSent = false;
             while (true) {
                 if (isStopRequested()) {
                     log.d("run() cancelled at checkpoint C");
@@ -151,6 +147,14 @@ public class ClientConnection implements Runnable {
 
                 log.d("data received from server: instruction=" + instruction
                         + " (" + r + ", " + g + ", " + b + ")");
+
+                if (!resetCommandSent) {
+                    log.d("sending synthetic reset command");
+                    final ColorCommand resetCommand =
+                            new ColorCommand(ColorCommand.Instruction.ABSOLUTE, 127, 127, 127, true);
+                    mCallback.commandReceived(this, resetCommand);
+                    resetCommandSent =true;
+                }
 
                 final ColorCommand command = new ColorCommand(instruction, r, g, b, false);
                 mCallback.commandReceived(this, command);

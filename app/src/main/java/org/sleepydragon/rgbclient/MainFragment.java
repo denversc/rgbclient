@@ -259,9 +259,7 @@ public class MainFragment extends Fragment
 
             mSelectedRelativeCommands = new HashSet<>();
             if (selectedRelativeCommands != null) {
-                for (final ColorCommand command : selectedRelativeCommands) {
-                    mSelectedRelativeCommands.add(command);
-                }
+                mSelectedRelativeCommands.addAll(selectedRelativeCommands);
             }
 
             mCommandHistory = new CircularArray<>();

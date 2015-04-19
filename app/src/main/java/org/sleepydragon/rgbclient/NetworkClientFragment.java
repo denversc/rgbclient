@@ -104,7 +104,6 @@ public class NetworkClientFragment extends Fragment {
         LOG.v("onActivityCreated()");
         super.onActivityCreated(savedInstanceState);
         mTargetFragmentCallbacks = (TargetFragmentCallbacks) getTargetFragment();
-        scheduleStartClient(); // in case the LoadSettingsAsyncTask already finished
     }
 
     @Override
